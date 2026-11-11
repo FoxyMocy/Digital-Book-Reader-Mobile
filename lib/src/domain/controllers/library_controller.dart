@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/book_file.dart';
+import '../models/bookmark.dart';
 import '../models/reader_settings.dart';
 import '../services/local_library_scanner.dart';
 
@@ -30,6 +31,7 @@ class LibraryController extends ChangeNotifier {
   static const _localeKey = 'reader_locale';
   static const _lastReadKey = 'library_last_read';
   static const _viewModeKey = 'library_is_grid_view';
+  static const _bookmarksKey = 'library_bookmarks';
 
   List<String> get sources => List.unmodifiable(_sources);
   List<BookFile> get books => List.unmodifiable(_books);
@@ -250,6 +252,40 @@ class LibraryController extends ChangeNotifier {
       _lastReadBook = _books[idx];
       await prefs.setString(_lastReadKey, path);
     }
+  }
+
+  // --- Bookmarks ---
+
+  Future<List<Bookmark>> getBookmarks(String path) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('$_bookmarksKey:$path');
+    if (raw == null) return [];
+    final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+    return list.map(Bookmark.fromJson).toList();
+  }
+
+  Future<void> addBookmark(String path, String position, String label) async {
+    final bookmarks = await getBookmarks(path);
+    bookmarks.add(Bookmark(
+      position: position,
+      label: label,
+      createdAt: DateTime.now(),
+    ));
+    await _saveBookmarks(path, bookmarks);
+  }
+
+  Future<void> removeBookmark(String path, String position) async {
+    final bookmarks = await getBookmarks(path);
+    bookmarks.removeWhere((b) => b.position == position);
+    await _saveBookmarks(path, bookmarks);
+  }
+
+  Future<void> _saveBookmarks(String path, List<Bookmark> bookmarks) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      '$_bookmarksKey:$path',
+      jsonEncode(bookmarks.map((b) => b.toJson()).toList()),
+    );
   }
 
   Future<void> _updateLastRead(String path) async {

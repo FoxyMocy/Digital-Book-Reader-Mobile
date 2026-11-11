@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.example.epub_ink_reader"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

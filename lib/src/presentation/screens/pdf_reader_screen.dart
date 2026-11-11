@@ -3,6 +3,7 @@ import 'package:pdfx/pdfx.dart';
 
 import '../../domain/controllers/library_controller.dart';
 import '../../domain/models/book_file.dart';
+import '../../domain/models/bookmark.dart';
 import '../localization/app_strings.dart';
 import '../theme/reader_theme_colors.dart';
 
@@ -20,6 +21,7 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
   late final PdfControllerPinch _pdfController;
   int _initialPage = 1;
   bool _isInit = false;
+  bool _isImmersive = false;
 
   @override
   void initState() {
@@ -34,6 +36,72 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
       initialPage: _initialPage,
     );
     setState(() => _isInit = true);
+  }
+
+  void _toggleImmersive() => setState(() => _isImmersive = !_isImmersive);
+
+  // --- Bookmarks ---
+
+  Future<void> _addBookmark() async {
+    final page = _pdfController.page;
+    await widget.libraryController.addBookmark(
+      widget.book.path,
+      page.toString(),
+      'Halaman $page',
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Bookmark ditambahkan')),
+      );
+    }
+  }
+
+  Future<void> _showBookmarks() async {
+    final bookmarks = await widget.libraryController.getBookmarks(widget.book.path);
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => _BookmarkList(
+        bookmarks: bookmarks,
+        onTap: (b) {
+          Navigator.pop(context);
+          _pdfController.jumpToPage(int.parse(b.position));
+        },
+        onDelete: (b) {
+          widget.libraryController.removeBookmark(widget.book.path, b.position);
+          Navigator.pop(context);
+        },
+      ),
+    );
+  }
+
+  // --- Jump to page ---
+
+  Future<void> _showJumpToPage(int totalPages) async {
+    final controller = TextEditingController();
+    final result = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Lompat ke halaman'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          decoration: InputDecoration(hintText: '1 – $totalPages'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, int.tryParse(controller.text)),
+            child: const Text('Lompat'),
+          ),
+        ],
+      ),
+    );
+    if (result != null && result >= 1 && result <= totalPages) {
+      _pdfController.jumpToPage(result);
+    }
   }
 
   @override
@@ -56,26 +124,84 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
 
         return Scaffold(
           backgroundColor: colors.background,
-          appBar: AppBar(
-            backgroundColor: colors.background,
-            foregroundColor: colors.text,
-            title: Text(widget.book.title, style: const TextStyle(fontSize: 16)),
-            actions: [
-              ValueListenableBuilder<int>(
-                valueListenable: _pdfController.pageListenable,
-                builder: (context, page, _) => Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(strings.page(page)),
+          appBar: _isImmersive
+              ? null
+              : AppBar(
+                  backgroundColor: colors.background,
+                  foregroundColor: colors.text,
+                  title: Text(widget.book.title, style: const TextStyle(fontSize: 16)),
+                  bottom: PreferredSize(
+                    preferredSize: const Size.fromHeight(48),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ValueListenableBuilder<int>(
+                          valueListenable: _pdfController.pageListenable,
+                          builder: (context, page, _) => TextButton(
+                            onPressed: () => _showJumpToPage(_pdfController.pagesCount ?? 1),
+                            child: Text(strings.page(page)),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.bookmark_add_outlined),
+                          onPressed: _addBookmark,
+                          tooltip: 'Tambah Bookmark',
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.bookmarks_outlined),
+                          onPressed: _showBookmarks,
+                          tooltip: 'Daftar Bookmark',
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+          body: GestureDetector(
+            onTap: _toggleImmersive,
+            child: PdfViewPinch(
+              controller: _pdfController,
+              onPageChanged: (page) => widget.libraryController.setProgress(widget.book.path, page),
+            ),
           ),
-          body: PdfViewPinch(
-            controller: _pdfController,
-            onPageChanged: (page) => widget.libraryController.setProgress(widget.book.path, page),
+        );
+      },
+    );
+  }
+}
+
+class _BookmarkList extends StatelessWidget {
+  const _BookmarkList({
+    required this.bookmarks,
+    required this.onTap,
+    required this.onDelete,
+  });
+
+  final List<Bookmark> bookmarks;
+  final void Function(Bookmark) onTap;
+  final void Function(Bookmark) onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    if (bookmarks.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: Text('Belum ada bookmark')),
+      );
+    }
+    return ListView.builder(
+      shrinkWrap: true,
+      itemCount: bookmarks.length,
+      itemBuilder: (context, index) {
+        final b = bookmarks[index];
+        return ListTile(
+          leading: const Icon(Icons.bookmark_outline),
+          title: Text(b.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(b.createdAt.toString().substring(0, 16)),
+          trailing: IconButton(
+            icon: const Icon(Icons.delete_outline),
+            onPressed: () => onDelete(b),
           ),
+          onTap: () => onTap(b),
         );
       },
     );

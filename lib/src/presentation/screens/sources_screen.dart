@@ -99,7 +99,7 @@ class SourcesScreen extends StatelessWidget {
   Future<void> _addFolder(BuildContext context) async {
     if (!await _ensureFolderScanPermission(context)) return;
 
-    final path = await FilePicker.platform.getDirectoryPath();
+    final path = await FilePicker.getDirectoryPath();
     if (path == null) return;
     await controller.addSource(path);
   }
@@ -153,14 +153,12 @@ class SourcesScreen extends StatelessWidget {
   }
 
   Future<void> _addFiles(BuildContext context) async {
-    final result = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
+    final files = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'epub'],
     );
-    if (result == null || result.paths.isEmpty) return;
-    
-    final validPaths = result.paths.whereType<String>().toList();
+    final validPaths = files.map((f) => f.path).whereType<String>().toList();
+    if (validPaths.isEmpty) return;
     await controller.addDirectFiles(validPaths);
   }
 }
